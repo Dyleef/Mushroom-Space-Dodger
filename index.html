@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mushroom Space Dodger – V9 (Scoreboard + Timers + Colors)</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden;
+    background: radial-gradient(circle at top, #1b2735, #090a0f);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    color:#fff;
+  }
+  canvas{display:block;}
+  #hud{position:absolute; inset:0; pointer-events:none; z-index:5;}
+  #hudLeft{
+    position:absolute; top:10px; left:10px;
+    font-size:16px; background:rgba(0,0,0,0.35);
+    padding:6px 10px; border-radius:10px; backdrop-filter: blur(4px);
+    line-height: 1.25;
+  }
+  #gearBtn{
+    position:absolute; top:10px; right:10px; pointer-events:auto;
+    border:0; border-radius:10px; padding:6px 10px; font-size:16px;
+    cursor:pointer; color:white; background:rgba(0,0,0,0.35);
+  }
+  .overlay{position:absolute; inset:0; display:none; justify-content:center; align-items:center;
+    background:rgba(0,0,0,0.65); pointer-events:auto;
+  }
+  #menu{z-index:20;}
+  #gameOver{z-index:25;}
+  #settings{z-index:30;}
+  .panel{
+    width:min(520px, calc(100vw - 40px));
+    background:rgba(20,20,30,0.92);
+    border-radius:16px;
+    padding:18px 18px 16px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.45);
+  }
+  .panel h1,.panel h2{margin:0 0 10px;}
+  .panel p{margin:6px 0 10px; opacity:0.9;}
+  .subgrid{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}
+  .stat{
+    background: rgba(255,255,255,0.06);
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+  label{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin:10px 0; background:rgba(255,255,255,0.06);
+    padding:10px 12px; border-radius:12px;
+  }
+  select,input[type="number"],input[type="color"]{
+    width:180px; max-width:55vw; padding:6px 8px; border-radius:10px;
+    border:1px solid rgba(255,255,255,0.18);
+    background:rgba(0,0,0,0.25); color:white; outline:none;
+  }
+  input[type="checkbox"]{transform:scale(1.2);}
+  .row{display:flex; gap:10px;}
+  .row>*{flex:1;}
+  .btn{
+    width:100%; padding:11px 12px; border:0; border-radius:12px; cursor:pointer;
+    font-size:16px; margin-top:10px; background:rgba(255,255,255,0.14); color:white;
+  }
+  .btn.primary{background:rgba(120,200,255,0.35);}
+  .btn.danger{background:rgba(255,90,120,0.35);}
+  .btn:active{transform:translateY(1px);}
+  .hint{font-size:13px; opacity:0.8; margin-top:10px; line-height:1.35;}
+  .tiny{font-size:12px; opacity:0.75;}
+</style>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#090a0f">
+
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="hudLeft">
+    <div id="hudTime">Time: 0s</div>
+    <div id="hudKills">Kills: 0</div>
+  </div>
+  <button id="gearBtn" title="Settings (S / Esc)">⚙️</button>
+</div>
+
+<div id="menu" class="overlay" style="display:flex">
+  <div class="panel">
+    <h1>🍄 Mushroom Space Dodger</h1>
+    <p>Survive. Grab power-ups. Use <b>Fear</b> to flip the hunt.</p>
+
+    <div class="subgrid" style="margin: 10px 0 6px;">
+      <div class="stat"><b>Best Time</b><div id="bestTime">—</div></div>
+      <div class="stat"><b>Best Kills</b><div id="bestKills">—</div></div>
+    </div>
+
+    <button class="btn primary" id="startBtn">Start Game</button>
+    <button class="btn" id="openSettingsFromMenu">Settings</button>
+
+    <p class="hint">
+      Controls: Move with mouse/touch. Fear lets you defeat enemies by touching them.
+      Settings can be opened anytime with ⚙️ / S / Esc.
+    </p>
+  </div>
+</div>
+
+<div id="settings" class="overlay">
+  <div class="panel">
+    <h2>⚙️ Settings</h2>
+
+    <label>
+      <span>Mode</span>
+      <select id="modeSelect">
+        <option value="scaled">Scaled (adds enemies one-by-one)</option>
+        <option value="chaotic">Chaotic (pressure)</option>
+      </select>
+    </label>
+
+    <label><span>Screen Shake</span><input type="checkbox" id="shakeToggle" checked /></label>
+    <label><span>Music (safe ambient)</span><input type="checkbox" id="musicToggle" /></label>
+
+    <label><span>Enemy “Ricochet” Buff</span><input type="checkbox" id="ricochetToggle" checked /></label>
+    <label>
+      <span>Ricochet duration (seconds)</span>
+      <input type="number" id="ricochetDuration" min="1" max="20" step="1" value="10" />
+    </label>
+    <label>
+      <span>Ricochet hits before enemy dies</span>
+      <select id="ricochetDeath">
+        <option value="0">Off</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="30" selected>30</option>
+        <option value="40">40</option>
+        <option value="50">50</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Fear chain bonus (ms per kill)</span>
+      <select id="fearChainBonus">
+        <option value="250">250ms</option>
+        <option value="500" selected>500ms</option>
+        <option value="750">750ms</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Fear max duration (seconds)</span>
+      <select id="fearMaxSeconds">
+        <option value="5">5s</option>
+        <option value="6" selected>6s</option>
+        <option value="7">7s</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Magnet Repulse duration (seconds)</span>
+      <select id="magnetSeconds">
+        <option value="4">4s</option>
+        <option value="6" selected>6s</option>
+        <option value="8">8s</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Color Theme</span>
+      <select id="themeSelect">
+        <option value="default" selected>Default</option>
+        <option value="highcontrast">High Contrast</option>
+        <option value="pastel">Pastel</option>
+        <option value="custom">Custom</option>
+      </select>
+    </label>
+
+    <div id="colorCustom" style="display:none; margin-top: 6px;">
+      <div class="subgrid">
+        <label><span>Player</span><input type="color" id="cPlayer" /></label>
+        <label><span>Player (Fear)</span><input type="color" id="cPlayerFear" /></label>
+        <label><span>Enemy</span><input type="color" id="cEnemy" /></label>
+        <label><span>Enemy (Fear)</span><input type="color" id="cEnemyFear" /></label>
+        <label><span>Power: Slow</span><input type="color" id="cSlow" /></label>
+        <label><span>Power: Fear</span><input type="color" id="cFear" /></label>
+        <label><span>Power: Magnet</span><input type="color" id="cMagnet" /></label>
+        <label><span>Power: Black Hole</span><input type="color" id="cBlack" /></label>
+      </div>
+      <div class="tiny" style="margin-top:8px;">Tip: if you pick “Custom”, these colors are used everywhere (including timers).</div>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="closeSettingsBtn">Back</button>
+      <button class="btn danger" id="resetSettingsBtn">Reset</button>
+    </div>
+
+    <p class="tiny">Accessibility: no flashing effects. Only color/behavior changes.</p>
+  </div>
+</div>
+
+<div id="gameOver" class="overlay">
+  <div class="panel">
+    <h2>Game Over</h2>
+    <p id="finalScore"></p>
+    <div class="subgrid" style="margin: 10px 0 6px;">
+      <div class="stat"><b>This Run</b><div id="runStats">—</div></div>
+      <div class="stat"><b>All-time Best</b><div id="bestStats">—</div></div>
+    </div>
+    <button class="btn primary" id="restartBtn">Restart</button>
+    <button class="btn" id="openSettingsFromGameOver">Settings</button>
+    <button class="btn" id="backToMenuBtn">Main Menu</button>
+  </div>
+</div>
+
+<script>
+/* ===== Canvas & DOM ===== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const elMenu = document.getElementById("menu");
+const elSettings = document.getElementById("settings");
+const elGameOver = document.getElementById("gameOver");
+
+const hudTime = document.getElementById("hudTime");
+const hudKills = document.getElementById("hudKills");
+const gearBtn = document.getElementById("gearBtn");
+
+const bestTimeEl = document.getElementById("bestTime");
+const bestKillsEl = document.getElementById("bestKills");
+
+const finalScoreEl = document.getElementById("finalScore");
+const runStatsEl = document.getElementById("runStats");
+const bestStatsEl = document.getElementById("bestStats");
+
+const startBtn = document.getElementById("startBtn");
+const restartBtn = document.getElementById("restartBtn");
+const backToMenuBtn = document.getElementById("backToMenuBtn");
+const openSettingsFromMenu = document.getElementById("openSettingsFromMenu");
+const openSettingsFromGameOver = document.getElementById("openSettingsFromGameOver");
+const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+const resetSettingsBtn = document.getElementById("resetSettingsBtn");
+
+const modeSelect = document.getElementById("modeSelect");
+const shakeToggle = document.getElementById("shakeToggle");
+const musicToggle = document.getElementById("musicToggle");
+const ricochetToggle = document.getElementById("ricochetToggle");
+const ricochetDuration = document.getElementById("ricochetDuration");
+const ricochetDeath = document.getElementById("ricochetDeath");
+const fearChainBonus = document.getElementById("fearChainBonus");
+const fearMaxSeconds = document.getElementById("fearMaxSeconds");
+const magnetSeconds = document.getElementById("magnetSeconds");
+
+const themeSelect = document.getElementById("themeSelect");
+const colorCustom = document.getElementById("colorCustom");
+const cPlayer = document.getElementById("cPlayer");
+const cPlayerFear = document.getElementById("cPlayerFear");
+const cEnemy = document.getElementById("cEnemy");
+const cEnemyFear = document.getElementById("cEnemyFear");
+const cSlow = document.getElementById("cSlow");
+const cFear = document.getElementById("cFear");
+const cMagnet = document.getElementById("cMagnet");
+const cBlack = document.getElementById("cBlack");
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+resize(); addEventListener("resize", resize);
+
+/* ===== Scoreboard ===== */
+const SCORE_KEY = "msd_scores_v10";
+let scores = loadScores();
+function loadScores(){
+  try{
+    const raw = localStorage.getItem(SCORE_KEY);
+    if(!raw) return {bestTime:0, bestKills:0};
+    const o = JSON.parse(raw);
+    return {bestTime: o.bestTime||0, bestKills: o.bestKills||0};
+  }catch{ return {bestTime:0, bestKills:0}; }
+}
+function saveScores(){
+  localStorage.setItem(SCORE_KEY, JSON.stringify(scores));
+}
+function renderBest(){
+  bestTimeEl.textContent = scores.bestTime ? (scores.bestTime + "s") : "—";
+  bestKillsEl.textContent = scores.bestKills ? (scores.bestKills + "") : "—";
+}
+renderBest();
+
+/* ===== Color themes ===== */
+const THEMES = {
+  default: {
+    player: "#ffffff",
+    playerFear: "#ff4444",
+    enemy: "#a944ff",
+    enemyFear: "#66ffcc",
+    slow: "#ffcc00",
+    fear: "#ff4444",
+    magnet: "#6ad7ff",
+    black: "#111111"
+  },
+  highcontrast: {
+    player: "#ffffff",
+    playerFear: "#ff0000",
+    enemy: "#ff00ff",
+    enemyFear: "#00ffff",
+    slow: "#ffff00",
+    fear: "#ff0000",
+    magnet: "#00aaff",
+    black: "#000000"
+  },
+  pastel: {
+    player: "#f8f8ff",
+    playerFear: "#ff7a90",
+    enemy: "#c7a6ff",
+    enemyFear: "#8fffe6",
+    slow: "#ffe08a",
+    fear: "#ff7a90",
+    magnet: "#9fdcff",
+    black: "#2a2a35"
+  }
+};
+function applyThemeToPickers(colors){
+  cPlayer.value = colors.player;
+  cPlayerFear.value = colors.playerFear;
+  cEnemy.value = colors.enemy;
+  cEnemyFear.value = colors.enemyFear;
+  cSlow.value = colors.slow;
+  cFear.value = colors.fear;
+  cMagnet.value = colors.magnet;
+  cBlack.value = colors.black;
+}
+
+/* ===== Settings (persisted) ===== */
+const SETTINGS_KEY = "msd_settings_v10";
+const DEFAULT_SETTINGS = {
+  mode: "scaled",
+  shake: true,
+  music: false,
+  ricochet: true,
+  ricochetDurationMs: 10000,
+  ricochetDeathHits: 30,
+  fearChainBonusMs: 500,
+  fearMaxMs: 6000,
+  magnetMs: 6000,
+  theme: "default",
+  customColors: {...THEMES.default}
+};
+let settings = loadSettings();
+function loadSettings(){
+  try{
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if(!raw) return {...DEFAULT_SETTINGS};
+    const o = JSON.parse(raw);
+    return {...DEFAULT_SETTINGS, ...o, customColors: {...DEFAULT_SETTINGS.customColors, ...(o.customColors||{})}};
+  }catch{ return {...DEFAULT_SETTINGS}; }
+}
+function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+
+function currentColors(){
+  if(settings.theme === "custom") return settings.customColors;
+  return THEMES[settings.theme] || THEMES.default;
+}
+
+function syncSettingsUI(){
+  modeSelect.value = settings.mode;
+  shakeToggle.checked = settings.shake;
+  musicToggle.checked = settings.music;
+  ricochetToggle.checked = settings.ricochet;
+  ricochetDuration.value = Math.round(settings.ricochetDurationMs/1000);
+  ricochetDeath.value = String(settings.ricochetDeathHits||0);
+  fearChainBonus.value = String(settings.fearChainBonusMs);
+  fearMaxSeconds.value = String(Math.round(settings.fearMaxMs/1000));
+  magnetSeconds.value = String(Math.round(settings.magnetMs/1000));
+  themeSelect.value = settings.theme;
+
+  const cols = settings.theme === "custom" ? settings.customColors : (THEMES[settings.theme] || THEMES.default);
+  applyThemeToPickers(cols);
+
+  colorCustom.style.display = (settings.theme === "custom") ? "block" : "none";
+}
+function pullSettingsFromUI(){
+  settings.mode = modeSelect.value;
+  settings.shake = !!shakeToggle.checked;
+  settings.music = !!musicToggle.checked;
+  settings.ricochet = !!ricochetToggle.checked;
+  settings.ricochetDurationMs = clamp(parseInt(ricochetDuration.value||"10",10)*1000, 1000, 20000);
+  settings.ricochetDeathHits = parseInt(ricochetDeath.value||"0",10);
+  settings.fearChainBonusMs = parseInt(fearChainBonus.value,10);
+  settings.fearMaxMs = parseInt(fearMaxSeconds.value,10)*1000;
+  settings.magnetMs = parseInt(magnetSeconds.value,10)*1000;
+  settings.theme = themeSelect.value;
+
+  // Always store picker values into customColors so switching to custom keeps them
+  settings.customColors = {
+    player: cPlayer.value,
+    playerFear: cPlayerFear.value,
+    enemy: cEnemy.value,
+    enemyFear: cEnemyFear.value,
+    slow: cSlow.value,
+    fear: cFear.value,
+    magnet: cMagnet.value,
+    black: cBlack.value
+  };
+
+  colorCustom.style.display = (settings.theme === "custom") ? "block" : "none";
+
+  saveSettings();
+}
+themeSelect.addEventListener("change", ()=>{
+  // If changing to a preset, push preset into pickers (so user can tweak after switching to custom)
+  const t = themeSelect.value;
+  if(t !== "custom"){
+    applyThemeToPickers(THEMES[t] || THEMES.default);
+  }
+  pullSettingsFromUI();
+});
+syncSettingsUI();
+
+/* ===== Safe ambient music ===== */
+let audioCtx = null;
+let musicNodes = null;
+function startMusic(){
+  if(!settings.music) return;
+  if(musicNodes) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const gain = audioCtx.createGain(); gain.gain.value = 0.03;
+    const o1 = audioCtx.createOscillator(); o1.type="sine"; o1.frequency.value=110;
+    const o2 = audioCtx.createOscillator(); o2.type="triangle"; o2.frequency.value=220;
+    const lfo = audioCtx.createOscillator(); lfo.type="sine"; lfo.frequency.value=0.08;
+    const lfoGain = audioCtx.createGain(); lfoGain.gain.value=12;
+    lfo.connect(lfoGain); lfoGain.connect(o2.frequency);
+    o1.connect(gain); o2.connect(gain); gain.connect(audioCtx.destination);
+    o1.start(); o2.start(); lfo.start();
+    musicNodes = {o1,o2,lfo};
+  }catch{}
+}
+function stopMusic(){
+  if(!musicNodes) return;
+  try{ musicNodes.o1.stop(); musicNodes.o2.stop(); musicNodes.lfo.stop(); }catch{}
+  musicNodes = null;
+}
+
+/* ===== Game State ===== */
+let running=false;
+let pausedBySettings=false;
+let settingsReturnState="menu";
+
+let player=null;
+let enemies=[];
+let powerUps=[];
+let particles=[];
+
+let startTime=0;
+let fearUntil=0;
+let magnetUntil=0;
+let slowUntil=0; // global timer for UI
+let shakeTime=0;
+
+let boss=null;
+let bossesDefeated=0;
+let enemiesSpawned=0;
+let killCount=0;
+
+let nextEnemySpawnAt=0;
+let nextPowerSpawnAt=0;
+let nextBossAt=0;
+
+function show(el){ el.style.display="flex"; }
+function hide(el){ el.style.display="none"; }
+
+function openMenu(){
+  running=false; boss=null;
+  stopMusic();
+  hide(elGameOver); hide(elSettings);
+  show(elMenu);
+  gearBtn.style.display="none";
+  renderBest();
+}
+
+function openGameOver(timeSec){
+  running=false;
+  stopMusic();
+
+  // Update bests
+  const newBestTime = Math.max(scores.bestTime||0, timeSec);
+  const newBestKills = Math.max(scores.bestKills||0, killCount);
+  scores.bestTime = newBestTime;
+  scores.bestKills = newBestKills;
+  saveScores();
+
+  finalScoreEl.textContent = `You survived ${timeSec} seconds.`;
+  runStatsEl.textContent = `${timeSec}s • ${killCount} kills`;
+  bestStatsEl.textContent = `${scores.bestTime}s • ${scores.bestKills} kills`;
+
+  hide(elSettings); hide(elMenu);
+  show(elGameOver);
+  gearBtn.style.display="none";
+}
+
+function openSettings(from="game"){
+  settingsReturnState = from;
+  pausedBySettings = running && from==="game";
+  pullSettingsFromUI();
+  syncSettingsUI();
+  hide(elMenu); hide(elGameOver);
+  show(elSettings);
+  gearBtn.style.display="none";
+}
+function closeSettings(){
+  pullSettingsFromUI();
+  syncSettingsUI();
+  hide(elSettings);
+  if(settings.music) startMusic(); else stopMusic();
+
+  if(settingsReturnState==="menu"){ show(elMenu); gearBtn.style.display="none"; pausedBySettings=false; return; }
+  if(settingsReturnState==="gameover"){ show(elGameOver); gearBtn.style.display="none"; pausedBySettings=false; return; }
+
+  gearBtn.style.display="block";
+  if(pausedBySettings){ pausedBySettings=false; requestAnimationFrame(loop); }
+}
+function toggleSettings(){
+  if(elSettings.style.display==="flex"){ closeSettings(); }
+  else {
+    const from = running ? "game" : (elGameOver.style.display==="flex" ? "gameover" : "menu");
+    openSettings(from);
+  }
+}
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape" || e.key.toLowerCase()==="s") toggleSettings();
+});
+gearBtn.addEventListener("click", ()=>toggleSettings());
+
+/* ===== Spawning ===== */
+function spawnEnemy(){
+  const s=Math.floor(Math.random()*4);
+  let x,y;
+  if(s===0){x=0;y=Math.random()*canvas.height}
+  if(s===1){x=canvas.width;y=Math.random()*canvas.height}
+  if(s===2){x=Math.random()*canvas.width;y=0}
+  if(s===3){x=Math.random()*canvas.width;y=canvas.height}
+
+  // Global half speed baseline + scaled ramp per your request
+  const GLOBAL_SPEED_SCALE = 0.5;
+  let base;
+
+  if(settings.mode==="scaled"){
+    const t = clamp(enemiesSpawned / 70, 0, 1); // slower ramp (more gradual)
+    const minS = 0.45;
+    const maxS = 1.70;
+    base = (minS + (maxS - minS) * t) * GLOBAL_SPEED_SCALE;
+    base *= (0.90 + Math.random()*0.20);
+  } else {
+    base = (1.6 + Math.random()*1.4) * GLOBAL_SPEED_SCALE;
+  }
+
+  enemies.push({
+    x,y,r:14,
+    baseSpeed: base,
+    speed: base,
+    slowUntil: 0,
+    ricochetStacks: 0,
+    ricochetUntil: 0,
+    ricochetHits: 0
+  });
+
+  enemiesSpawned++;
+}
+
+function spawnPowerUp(type=null){
+  // Types: fear, slow, blackhole, magnet
+  if(!type){
+    const elapsed = Math.floor((Date.now()-startTime)/1000);
+    const fearBias = clamp(elapsed/60, 0, 0.15);
+
+    // After 2+ boss defeats: up to 10% chance spawn becomes black hole
+    if(bossesDefeated >= 2 && Math.random() < 0.10){
+      type = "blackhole";
+    } else if(elapsed >= 100 && Math.random() < 0.06){
+      type = "blackhole";
+    } else {
+      const magnetChance = (elapsed >= 45) ? 0.18 : 0.10;
+      const roll = Math.random();
+      if(roll < magnetChance) type = "magnet";
+      else type = (Math.random() < (0.50 + fearBias)) ? "fear" : "slow";
+    }
+  }
+  powerUps.push({x:rand(30,canvas.width-30), y:rand(30,canvas.height-30), r:9, type});
+}
+
+function applyRicochetStack(e, now){
+  if(!settings.ricochet) return;
+  e.ricochetStacks = clamp(e.ricochetStacks + 1, 0, 20);
+  e.ricochetUntil = now + settings.ricochetDurationMs;
+}
+
+/* Boss */
+function spawnBoss(now){
+  const lifetimeMs = settings.mode==="chaotic" ? 9000 : 12000;
+  boss = {x:rand(40,canvas.width-40), y:rand(40,canvas.height-40), r:26, hp:3, despawnAt: now + lifetimeMs, nextTeleportAt: 0};
+}
+
+/* ===== Input ===== */
+function setPlayerPos(x,y){ if(player){ player.x=x; player.y=y; } }
+addEventListener("mousemove", e=>setPlayerPos(e.clientX,e.clientY));
+addEventListener("touchmove", e=>{
+  if(e.touches && e.touches[0]) setPlayerPos(e.touches[0].clientX, e.touches[0].clientY);
+},{passive:true});
+
+/* ===== Effects ===== */
+function spawnParticles(x,y,count=14){
+  for(let i=0;i<count;i++){
+    particles.push({x,y,vx:(Math.random()-0.5)*3, vy:(Math.random()-0.5)*3, life:26});
+  }
+}
+
+/* ===== Start/Restart ===== */
+function startGame(){
+  pullSettingsFromUI();
+  bossesDefeated=0; enemiesSpawned=0; killCount=0;
+
+  player = {x:canvas.width/2, y:canvas.height/2, r:12};
+  enemies = []; powerUps = []; particles = [];
+
+  startTime = Date.now();
+  fearUntil = 0; magnetUntil = 0; slowUntil = 0;
+  boss = null; shakeTime = 0;
+
+  // initial enemies
+  for(let i=0;i<(settings.mode==="chaotic"?2:1);i++) spawnEnemy();
+
+  // schedulers
+  const now = Date.now();
+  nextEnemySpawnAt = now + (settings.mode==="chaotic" ? 1400 : 2200);
+  nextPowerSpawnAt = now + 8000;
+  const firstBossAtSec = (settings.mode==="chaotic") ? 18 : 25;
+  nextBossAt = startTime + firstBossAtSec*1000;
+
+  running=true;
+  pausedBySettings=false;
+  hide(elMenu); hide(elGameOver); hide(elSettings);
+  gearBtn.style.display="block";
+  if(settings.music) startMusic(); else stopMusic();
+
+  requestAnimationFrame(loop);
+}
+
+/* Buttons */
+startBtn.addEventListener("click", ()=>startGame());
+restartBtn.addEventListener("click", ()=>startGame());
+backToMenuBtn.addEventListener("click", ()=>openMenu());
+openSettingsFromMenu.addEventListener("click", ()=>openSettings("menu"));
+openSettingsFromGameOver.addEventListener("click", ()=>openSettings("gameover"));
+closeSettingsBtn.addEventListener("click", ()=>closeSettings());
+resetSettingsBtn.addEventListener("click", ()=>{
+  settings = {...DEFAULT_SETTINGS, customColors: {...DEFAULT_SETTINGS.customColors}};
+  saveSettings();
+  syncSettingsUI();
+});
+
+/* ===== Buff timer bar (balls) ===== */
+function drawBuffBalls(x, y, balls, color, label){
+  const r = 5;
+  const gap = 2;
+  const totalW = balls * (r*2 + gap);
+  // background bar block
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(x-6, y-7, totalW + 36, 20);
+  // label circle
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x+6, y+3, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.font = "10px system-ui";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, x+6, y+3);
+
+  let startX = x + 18;
+  ctx.fillStyle = color;
+  for(let i=0;i<balls;i++){
+    ctx.beginPath();
+    ctx.arc(startX + i*(r*2+gap), y+3, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+/* ===== Main Loop ===== */
+function loop(){
+  if(!running) return;
+  if(elSettings.style.display==="flex") return;
+
+  const now = Date.now();
+  const elapsedSec = Math.floor((now - startTime)/1000);
+  hudTime.textContent = `Time: ${elapsedSec}s`;
+  hudKills.textContent = `Kills: ${killCount}`;
+
+  const fearActive = fearUntil > now;
+  const magnetActive = magnetUntil > now;
+
+  // Boss schedule
+  const bossIntervalMs = 25000;
+  if(!boss && now >= nextBossAt){
+    spawnBoss(now);
+    nextBossAt = now + bossIntervalMs;
+  }
+  if(boss && now > boss.despawnAt){ boss = null; }
+
+  // Enemy spawning (one-by-one scaled)
+  if(now >= nextEnemySpawnAt){
+    let cap = (settings.mode==="chaotic") ? (16 + elapsedSec) : (6 + Math.floor(elapsedSec*0.55));
+    if(boss && settings.mode==="scaled" && elapsedSec < 60){
+      cap = Math.floor(cap * 0.75);
+    }
+    if(enemies.length < cap) spawnEnemy();
+
+    let interval;
+    if(settings.mode==="chaotic"){
+      interval = clamp(900 - elapsedSec*3, 420, 900);
+    } else {
+      interval = clamp(1800 - elapsedSec*4, 700, 1800);
+      if(boss && elapsedSec < 60) interval *= 1.35;
+    }
+    nextEnemySpawnAt = now + interval;
+  }
+
+  // Power-ups
+  if(now >= nextPowerSpawnAt){
+    if(powerUps.length < 1) spawnPowerUp();
+    nextPowerSpawnAt = now + 8000;
+  }
+
+  // Screen shake
+  if(settings.shake && shakeTime>0){
+    ctx.setTransform(1,0,0,1,(Math.random()-0.5)*6,(Math.random()-0.5)*6);
+    shakeTime--;
+  } else {
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // subtle stars
+  ctx.globalAlpha = 0.15;
+  for(let i=0;i<24;i++){
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect((i*97 + elapsedSec*7) % canvas.width, (i*193 + elapsedSec*3) % canvas.height, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  const col = currentColors();
+
+  // Buff timers (stack below Time/Kills so nothing overlaps)
+  const msPerBall = 250;
+  let row = 0;
+  const baseY = 56;      // start below HUD box
+  const rowH  = 24;      // each buff gets its own row
+  const startX = 10;
+
+  if(fearUntil > now){
+    const balls = Math.max(1, Math.ceil((fearUntil - now)/msPerBall));
+    drawBuffBalls(startX, baseY + row*rowH, balls, col.fear, "F");
+    row++;
+  }
+  if(magnetUntil > now){
+    const balls = Math.max(1, Math.ceil((magnetUntil - now)/msPerBall));
+    drawBuffBalls(startX, baseY + row*rowH, balls, col.magnet, "M");
+    row++;
+  }
+  if(slowUntil > now){
+    const balls = Math.max(1, Math.ceil((slowUntil - now)/msPerBall));
+    drawBuffBalls(startX, baseY + row*rowH, balls, col.slow, "S");
+    row++;
+  }
+
+  // Player
+  ctx.fillStyle = fearActive ? col.playerFear : col.player;
+  ctx.beginPath(); ctx.arc(player.x,player.y,player.r,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = fearActive ? col.playerFear : "#ff4d4d";
+  ctx.globalAlpha = 0.65;
+  ctx.beginPath(); ctx.arc(player.x,player.y-6,player.r-4,Math.PI,0); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Magnet aura (subtle)
+  if(magnetActive){
+    ctx.strokeStyle = "rgba(120, 200, 255, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(player.x, player.y, 42, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // Power-ups
+  for(let i=powerUps.length-1;i>=0;i--){
+    const p = powerUps[i];
+    if(p.type==="fear") ctx.fillStyle = col.fear;
+    else if(p.type==="slow") ctx.fillStyle = col.slow;
+    else if(p.type==="magnet") ctx.fillStyle = col.magnet;
+    else ctx.fillStyle = col.black;
+
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+
+    if(p.type==="blackhole"){
+      const t = (now/1000);
+      ctx.strokeStyle = "rgba(255,255,255,0.22)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r+6+Math.sin(t)*1.5,0,Math.PI*2); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r+12+Math.cos(t*0.8)*1.5,0,Math.PI*2); ctx.stroke();
+    }
+
+    if(Math.hypot(player.x-p.x, player.y-p.y) < player.r + p.r){
+      if(p.type==="slow"){
+        const until = now + 4000;
+        slowUntil = Math.max(slowUntil, until);
+        enemies.forEach(e=>{ e.speed = e.baseSpeed * 0.45; e.slowUntil = until; });
+      } else if(p.type==="fear"){
+        fearUntil = now + 4000;
+      } else if(p.type==="magnet"){
+        // Picking up Magnet now EXTENDS remaining time (instead of just resetting).
+        // Cap prevents it from becoming infinite.
+        const cap = now + Math.max(12000, settings.magnetMs*2);
+        magnetUntil = Math.min(cap, Math.max(magnetUntil, now) + settings.magnetMs);
+      } else if(p.type==="blackhole"){
+        // Clear enemies (does NOT add kills)
+        for(const e of enemies){ spawnParticles(e.x,e.y,10); }
+        enemies.length = 0;
+        if(settings.shake) shakeTime = 18;
+      }
+      powerUps.splice(i,1);
+    }
+  }
+
+  // Enemies
+  for(let i=enemies.length-1;i>=0;i--){
+    const e = enemies[i];
+
+    if(e.slowUntil && now > e.slowUntil){ e.speed = e.baseSpeed; e.slowUntil = 0; }
+    if(e.ricochetUntil && now > e.ricochetUntil){ e.ricochetStacks = 0; e.ricochetUntil = 0; }
+
+    let dx = player.x - e.x, dy = player.y - e.y;
+    let d = Math.hypot(dx,dy) || 0.0001;
+
+    if(fearActive){ dx *= -1; dy *= -1; }
+
+    // Magnet repulse (only when not in fear)
+    if(magnetActive && !fearActive){
+      const repelR = 120;
+      if(d < repelR){
+        const repel = (1 - d/repelR) * 1.10;
+        e.x += (-dx/d) * repel;
+        e.y += (-dy/d) * repel;
+      }
+    }
+
+    e.x += (dx/d) * e.speed;
+    e.y += (dy/d) * e.speed;
+
+    // Keep inside battlefield
+    e.x = clamp(e.x, e.r, canvas.width - e.r);
+    e.y = clamp(e.y, e.r, canvas.height - e.r);
+
+    // Bounce with others
+    for(let j=i-1;j>=0;j--){
+      const o = enemies[j];
+      const dist = Math.hypot(e.x-o.x, e.y-o.y);
+      const minD = e.r + o.r;
+      if(dist < minD && dist > 0.0001){
+        const nx = (e.x - o.x)/dist, ny = (e.y - o.y)/dist;
+        const sMax = Math.max(clamp(e.ricochetStacks,0,20), clamp(o.ricochetStacks,0,20));
+        const overlap = Math.max(0, minD - dist);
+
+        // MORE BOUNCING: much stronger force + overlap kick
+        const force = 3.0 + sMax * 0.9 + overlap * 0.7;
+
+        e.x += nx*force; e.y += ny*force;
+        o.x -= nx*force; o.y -= ny*force;
+
+        e.x = clamp(e.x, e.r, canvas.width - e.r);
+        e.y = clamp(e.y, e.r, canvas.height - e.r);
+        o.x = clamp(o.x, o.r, canvas.width - o.r);
+        o.y = clamp(o.y, o.r, canvas.height - o.r);
+
+        applyRicochetStack(e, now);
+        applyRicochetStack(o, now);
+
+        // Ricochet death counter (does NOT count as kills)
+        if(settings.ricochetDeathHits && settings.ricochetDeathHits > 0){
+          e.ricochetHits++;
+          o.ricochetHits++;
+          if(e.ricochetHits >= settings.ricochetDeathHits){
+            spawnParticles(e.x,e.y,12);
+            enemies.splice(i,1);
+            // note: break out of inner loop
+            break;
+          }
+          if(j < enemies.length && o.ricochetHits >= settings.ricochetDeathHits){
+            spawnParticles(o.x,o.y,12);
+            enemies.splice(j,1);
+            // continue; indices handled by for loop direction
+          }
+        }
+      }
+    }
+
+    // If we removed e due to ricochet deaths, skip draw/collisions
+    if(i >= enemies.length) continue;
+    const e2 = enemies[i];
+
+    ctx.fillStyle = fearActive ? col.enemyFear : col.enemy;
+    ctx.beginPath(); ctx.arc(e2.x,e2.y,e2.r,0,Math.PI*2); ctx.fill();
+
+    if(Math.hypot(player.x-e2.x, player.y-e2.y) < player.r + e2.r){
+      if(fearActive){
+        enemies.splice(i,1);
+        spawnParticles(e2.x,e2.y,16);
+        if(settings.shake) shakeTime = 10;
+        killCount++;
+
+        const maxUntil = now + settings.fearMaxMs;
+        fearUntil = clamp(fearUntil + settings.fearChainBonusMs, now, maxUntil);
+      } else {
+        openGameOver(elapsedSec); return;
+      }
+    }
+  }
+
+  // Boss
+  if(boss){
+    let b = boss;
+
+    ctx.fillStyle = col.enemy;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r+6,0,Math.PI*2); ctx.stroke();
+
+    let dx = player.x - b.x, dy = player.y - b.y;
+    let d = Math.hypot(dx,dy) || 0.0001;
+    const bossSpeed = fearActive ? 1.0 : 0.85;
+    if(fearActive){ dx *= -1; dy *= -1; }
+    b.x += (dx/d) * bossSpeed;
+    b.y += (dy/d) * bossSpeed;
+    b.x = clamp(b.x, b.r, canvas.width-b.r);
+    b.y = clamp(b.y, b.r, canvas.height-b.r);
+
+    const hitDist = Math.hypot(player.x-b.x, player.y-b.y);
+    if(hitDist < player.r + b.r){
+      if(fearActive){
+        if(now > b.nextTeleportAt){
+          b.hp -= 1;
+          spawnParticles(b.x,b.y,22);
+          if(settings.shake) shakeTime = 14;
+          b.nextTeleportAt = now + 250;
+
+          if(b.hp <= 0){
+            bossesDefeated++;
+            spawnPowerUp("slow"); // must drop slow
+            if(Math.random() < 0.35) spawnPowerUp("fear");
+            if(bossesDefeated === 2) spawnPowerUp("blackhole");
+            boss = null;
+            b = null;
+          } else {
+            const side = Math.floor(Math.random()*4);
+            if(side===0){ b.x = 30; b.y = rand(30, canvas.height-30); }
+            if(side===1){ b.x = canvas.width-30; b.y = rand(30, canvas.height-30); }
+            if(side===2){ b.x = rand(30, canvas.width-30); b.y = 30; }
+            if(side===3){ b.x = rand(30, canvas.width-30); b.y = canvas.height-30; }
+          }
+        }
+      } else {
+        openGameOver(elapsedSec); return;
+      }
+    }
+
+    // Boss HP bar
+    if(b){
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(10, 62, 110, 10);
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.fillRect(10, 62, 110 * (b.hp/3), 10);
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.strokeRect(10, 62, 110, 10);
+    }
+  }
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life -= 1;
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.fillRect(p.x,p.y,2,2);
+    if(p.life<=0) particles.splice(i,1);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+/* ===== UI wiring ===== */
+function startAtMenu(){ gearBtn.style.display="none"; show(elMenu); renderBest(); }
+startAtMenu();
+
+
+// PWA service worker
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(()=>{});
+  });
+}
+
+/* Buttons wiring */
+// already bound in startGame creation above, but ensure here too
+</script>
+</body>
+</html>
